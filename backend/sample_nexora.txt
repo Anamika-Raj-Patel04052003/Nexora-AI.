@@ -1,0 +1,19 @@
+NEXORA AI - PROJECT INFORMATION
+
+NEXORA AI is a multilingual AI-powered chatbot designed to answer questions from uploaded documents.
+
+The project uses React.js for the frontend and FastAPI for the backend.
+
+LangChain is used to build language model chains, while LangGraph manages the workflow and different processing nodes.
+
+Groq API is used to generate responses from the language model.
+
+PostgreSQL is used as the database, and pgvector stores document embeddings for semantic search.
+
+The RAG system stands for Retrieval Augmented Generation. It retrieves relevant information from documents and provides that information as context to the language model.
+
+The embedding model used in NEXORA AI is paraphrase-multilingual-MiniLM-L12-v2.
+
+The embedding dimension is 384.
+
+The chatbot supports multilingual document question answering and is designed to avoid generating answers that are not supported by the uploaded documents.

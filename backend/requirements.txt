@@ -1,0 +1,49 @@
+
+# Core Backend
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+python-dotenv
+
+# LangChain Core
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-classic
+
+# Groq LLM
+langchain-groq
+
+# LangGraph
+langgraph
+langgraph-checkpoint-sqlite
+
+# LangSmith
+langsmith
+
+# Embeddings
+langchain-huggingface
+sentence-transformers
+
+# Vector Database - PostgreSQL + pgvector
+langchain-postgres
+pgvector
+psycopg[binary,pool]
+sqlalchemy
+
+# Document Loaders
+pypdf
+docx2txt
+unstructured
+
+# Image Processing
+Pillow
+opencv-python-headless
+
+# Utilities
+requests
+aiofiles
+tenacity
