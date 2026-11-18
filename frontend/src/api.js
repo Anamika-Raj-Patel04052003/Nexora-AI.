@@ -1,4 +1,3 @@
-
 const BASE = '/api'
 
 async function request(path, options = {}) {
@@ -20,6 +19,9 @@ async function request(path, options = {}) {
   return res
 }
 
+// ==========================================
+// CONVERSATIONS & CHAT
+// ==========================================
 
 export async function listChats() {
   return (await request('/conversations')).json()
@@ -38,7 +40,6 @@ export async function deleteChat(id) {
 }
 
 // Sends a message and calls onChunk(textSoFar) while the reply streams in
-
 export async function sendMessage(id, message, onChunk) {
   const res = await request(`/conversations/${id}/chat`, {
     method: 'POST',
@@ -49,7 +50,7 @@ export async function sendMessage(id, message, onChunk) {
   })
 
   if (!res.body) {
-    throw new Error('Streaming response is not supported.')
+    throw new Error('Streaming response is not supported by the browser.')
   }
 
   const reader = res.body.getReader()
@@ -64,12 +65,10 @@ export async function sendMessage(id, message, onChunk) {
       if (done) break
 
       full += decoder.decode(value, { stream: true })
-
       onChunk(full)
     }
 
     full += decoder.decode()
-
     onChunk(full)
 
     return full
@@ -78,16 +77,12 @@ export async function sendMessage(id, message, onChunk) {
   }
 }
 
-
-
 // ==========================================
-// DOCUMENT UPLOAD API
+// DOCUMENT UPLOAD & RAG
 // ==========================================
 
 export async function uploadDocument(conversationId, file) {
-
   const formData = new FormData()
-
   formData.append('file', file)
 
   const res = await request(
@@ -101,16 +96,7 @@ export async function uploadDocument(conversationId, file) {
   return res.json()
 }
 
-
-// ==========================================
-// ASK QUESTION FROM UPLOADED DOCUMENT
-// ==========================================
-
-export async function askDocumentQuestion(
-  conversationId,
-  question
-) {
-
+export async function askDocumentQuestion(conversationId, question) {
   const res = await request(
     `/conversations/${conversationId}/documents/ask`,
     {
@@ -127,16 +113,14 @@ export async function askDocumentQuestion(
   return res.json()
 }
 
-
 // ==========================================
-// IMAGE UPLOAD API
+// MULTIMODAL MEDIA UPLOAD (VISION & AUDIO)
 // ==========================================
 
 export async function uploadImage(conversationId, file, question) {
   const formData = new FormData()
-
   formData.append('file', file)
-  formData.append('question', question || 'Describe this image.')
+  formData.append('question', question || 'Describe this image in detail.')
 
   const res = await request(
     `/conversations/${conversationId}/media/image`,
@@ -149,14 +133,8 @@ export async function uploadImage(conversationId, file, question) {
   return res.json()
 }
 
-
-// ==========================================
-// AUDIO TRANSCRIPTION API
-// ==========================================
-
 export async function uploadAudio(conversationId, file) {
   const formData = new FormData()
-
   formData.append('file', file)
 
   const res = await request(
@@ -170,14 +148,8 @@ export async function uploadAudio(conversationId, file) {
   return res.json()
 }
 
-
-// ==========================================
-// VIDEO UPLOAD API
-// ==========================================
-
 export async function uploadVideo(conversationId, file, question) {
   const formData = new FormData()
-
   formData.append('file', file)
   formData.append('question', question || 'Summarize this video.')
 
@@ -192,3 +164,95 @@ export async function uploadVideo(conversationId, file, question) {
   return res.json()
 }
 
+// ==========================================
+// CREATIVE STUDIO APIS (BLOG, IMAGE, AUDIO, VIDEO)
+// ==========================================
+
+/**
+ * Generate a full publication blog with optional formulas, tables, inline images, audio & video
+ */
+export async function generateBlog({
+  topic,
+  language = 'English',
+  tone = 'Professional',
+  length = 'Medium',
+  include_images = true,
+  image_mode = 'cloud',
+  include_audio = false,
+  voice = 'en-US-AriaNeural',
+  include_video = false,
+}) {
+  const res = await request('/creative/blog', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      topic,
+      language,
+      tone,
+      length,
+      include_images,
+      image_mode,
+      include_audio,
+      voice,
+      include_video,
+    }),
+  })
+
+  return res.json()
+}
+
+/**
+ * Generate standalone image (cloud or local)
+ */
+export async function generateStandaloneImage(prompt, mode = 'cloud') {
+  const res = await request('/creative/image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt,
+      mode,
+    }),
+  })
+
+  return res.json()
+}
+
+/**
+ * Generate standalone audio narration using Edge-TTS
+ */
+export async function generateStandaloneAudio(text, voice = 'en-US-AriaNeural') {
+  const res = await request('/creative/audio', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      voice,
+    }),
+  })
+
+  return res.json()
+}
+
+/**
+ * Compile video slideshow from generated images and audio
+ */
+export async function generateStandaloneVideo(image_filenames, audio_filename) {
+  const res = await request('/creative/video', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      image_filenames,
+      audio_filename,
+    }),
+  })
+
+  return res.json()
+}

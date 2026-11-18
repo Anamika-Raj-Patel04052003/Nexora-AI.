@@ -1,10 +1,14 @@
 import sqlite3
+import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # The database file lives in the backend folder: backend/nexora.db
 DB_PATH = Path(__file__).resolve().parent.parent / "nexora.db"
+CHECKPOINT_DB_PATH = Path(__file__).resolve().parent.parent / "nexora_checkpoints.db"
 
 
 def _now() -> str:
@@ -116,8 +120,46 @@ def set_title(conversation_id: int, title: str) -> None:
         )
 
 
+def has_uploaded_documents(conversation_id: int) -> bool:
+    """
+    Check if a conversation has records of uploaded documents.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM messages WHERE conversation_id = ? "
+            "AND content LIKE '[Document uploaded:%' LIMIT 1",
+            (conversation_id,),
+        ).fetchone()
+        return row is not None
+
+
+def cleanup_conversation_checkpoints(conversation_id: int) -> None:
+    """
+    Clean up LangGraph checkpoints for a deleted conversation thread.
+    """
+    if not CHECKPOINT_DB_PATH.exists():
+        return
+
+    try:
+        thread_id = str(conversation_id)
+        with sqlite3.connect(str(CHECKPOINT_DB_PATH)) as conn:
+            conn.execute(
+                "DELETE FROM checkpoints WHERE thread_id = ?",
+                (thread_id,)
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning(
+            "Could not clean up checkpoints for conversation %s: %s",
+            conversation_id, e
+        )
+
+
 def delete_conversation(conversation_id: int) -> None:
     with get_conn() as conn:
         conn.execute(
             "DELETE FROM conversations WHERE id = ?", (conversation_id,)
         )
+    cleanup_conversation_checkpoints(conversation_id)
+    
+    

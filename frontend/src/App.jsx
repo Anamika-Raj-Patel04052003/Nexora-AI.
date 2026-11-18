@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatArea from './components/ChatArea'
@@ -174,7 +173,7 @@ export default function App() {
     return id
   }
 
-  // Normal text chat
+  // Normal text chat with auto document-aware graph streaming
   async function send(text) {
     if (busy || !text.trim()) return
 
@@ -284,13 +283,22 @@ export default function App() {
         const sourceText = result.sources
           .map(
             (source) =>
-              `- ${source.source || 'Unknown'} (Page: ${
-                source.page ?? 'Unknown'
-              })`
+              `- 📄 ${source.filename || source.source || 'Unknown'}`
           )
           .join('\n')
 
-        answer += `\n\n**Sources:**\n${sourceText}`
+        answer += `\n\n**Document Sources:**\n${sourceText}`
+      }
+
+      if (result.web_sources?.length) {
+        const webText = result.web_sources
+          .map(
+            (web) =>
+              `- 🌐 [${web.title || 'Web Result'}](${web.url})`
+          )
+          .join('\n')
+
+        answer += `\n\n**Web Sources:**\n${webText}`
       }
 
       setMessages((prev) => {
@@ -322,7 +330,7 @@ export default function App() {
     }
   }
 
-  // Image, audio and video processing
+  // Multimodal Image, audio and video processing
   async function handleMediaUpload(file, mediaType, question) {
     if (busy || !file) return
 
@@ -350,7 +358,7 @@ export default function App() {
         result = await api.uploadImage(
           id,
           file,
-          userQuestion || 'Describe this image.'
+          userQuestion || 'Describe this image in detail.'
         )
       } else if (mediaType === 'audio') {
         result = await api.uploadAudio(id, file)
@@ -411,6 +419,64 @@ export default function App() {
     }
   }
 
+  // Creative Blog & Media Generation Handler
+  async function handleGenerateBlog(options) {
+    if (busy) return
+
+    setBusy(true)
+    setError('')
+
+    const userPromptText = `[Creative Studio: ${options.topic}] (Tone: ${options.tone}, Length: ${options.length})`
+
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: userPromptText },
+      { role: 'assistant', content: '✦ Crafting your publication with formulas, tables and media...' },
+    ])
+
+    try {
+      const id = await ensureConversation()
+      const result = await api.generateBlog(options)
+
+      let answer = result.content || 'Blog generated successfully.'
+
+      if (result.audio_url) {
+        answer += `\n\n**🎙 Audio Podcast Narration:**\n[Listen to Narration](${result.audio_url})`
+      }
+
+      if (result.video_url) {
+        answer += `\n\n**🎬 MP4 Video Slideshow:**\n[Watch Video Slideshow](${result.video_url})`
+      }
+
+      setMessages((prev) => {
+        const copy = [...prev]
+
+        copy[copy.length - 1] = {
+          role: 'assistant',
+          content: answer,
+        }
+
+        return copy
+      })
+    } catch (err) {
+      setError('Blog generation failed: ' + err.message)
+
+      setMessages((prev) => {
+        const copy = [...prev]
+
+        copy[copy.length - 1] = {
+          role: 'assistant',
+          content: 'Unable to generate blog. Please check backend services.',
+        }
+
+        return copy
+      })
+    } finally {
+      setBusy(false)
+      refreshChats().catch(() => {})
+    }
+  }
+
   // Application UI
   return (
     <div className="app">
@@ -431,6 +497,7 @@ export default function App() {
         onAskDocument={askDocument}
         onUploadDocument={handleDocumentUpload}
         onUploadMedia={handleMediaUpload}
+        onGenerateBlog={handleGenerateBlog}
         documentReady={documentReady}
         documentName={documentName}
         onMenu={() => setSidebarOpen((value) => !value)}

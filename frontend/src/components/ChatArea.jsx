@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 
 export default function ChatArea({
   messages = [],
@@ -10,6 +12,7 @@ export default function ChatArea({
   onAskDocument,
   onUploadDocument,
   onUploadMedia,
+  onGenerateBlog,
   documentReady = false,
   documentName = '',
   onMenu,
@@ -18,6 +21,15 @@ export default function ChatArea({
   const [menuOpen, setMenuOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState(null)
   const [mediaType, setMediaType] = useState('')
+
+  // Creative Studio Modal State
+  const [creativeOpen, setCreativeOpen] = useState(false)
+  const [blogTopic, setBlogTopic] = useState('')
+  const [blogTone, setBlogTone] = useState('Professional')
+  const [blogLength, setBlogLength] = useState('Medium')
+  const [includeImages, setIncludeImages] = useState(true)
+  const [includeAudio, setIncludeAudio] = useState(false)
+  const [includeVideo, setIncludeVideo] = useState(false)
 
   const documentInput = useRef(null)
   const imageInput = useRef(null)
@@ -59,7 +71,6 @@ export default function ChatArea({
     if (busy) return
 
     const message = text.trim()
-
     if (!message && !pendingFile) return
 
     if (pendingFile) {
@@ -83,6 +94,27 @@ export default function ChatArea({
     }
   }
 
+  async function handleCreateBlogSubmit(e) {
+    e.preventDefault()
+    if (!blogTopic.trim() || busy) return
+
+    const params = {
+      topic: blogTopic.trim(),
+      tone: blogTone,
+      length: blogLength,
+      include_images: includeImages,
+      include_audio: includeAudio,
+      include_video: includeVideo,
+    }
+
+    setCreativeOpen(false)
+    setBlogTopic('')
+
+    if (onGenerateBlog) {
+      await onGenerateBlog(params)
+    }
+  }
+
   function handleKeyDown(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -95,12 +127,10 @@ export default function ChatArea({
 
     const textarea = event.target
     textarea.style.height = 'auto'
-    textarea.style.height =
-      `${Math.min(textarea.scrollHeight, 160)}px`
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
   }
 
-  const canSend =
-    !busy && (text.trim().length > 0 || Boolean(pendingFile))
+  const canSend = !busy && (text.trim().length > 0 || Boolean(pendingFile))
 
   return (
     <main className="chat-area">
@@ -182,17 +212,22 @@ export default function ChatArea({
 
             <div className="welcome-capabilities">
 
-              <div className="capability-card">
+              <div className="capability-card" onClick={() => setText('Explain quantum computing with formulas')}>
                 <span className="capability-icon">✧</span>
                 <span>Ask Anything</span>
               </div>
 
-              <div className="capability-card">
+              <div className="capability-card" onClick={() => documentInput.current?.click()}>
                 <span className="capability-icon">▤</span>
                 <span>Explore Documents</span>
               </div>
 
-              <div className="capability-card">
+              <div className="capability-card" onClick={() => setCreativeOpen(true)}>
+                <span className="capability-icon">✦</span>
+                <span>Creative Studio</span>
+              </div>
+
+              <div className="capability-card" onClick={() => imageInput.current?.click()}>
                 <span className="capability-icon">◎</span>
                 <span>Understand Media</span>
               </div>
@@ -213,7 +248,32 @@ export default function ChatArea({
 
                 <div className="message-content">
                   {message.content ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                      components={{
+                        // Custom link renderer to embed Audio and Video players inline
+                        a: ({ node, href, children, ...props }) => {
+                          if (href && (href.endsWith('.mp3') || href.includes('/creative/audio/'))) {
+                            return (
+                              <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+                                <audio controls src={href} style={{ width: '100%', maxWidth: '380px' }} />
+                                <div><a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a></div>
+                              </div>
+                            )
+                          }
+                          if (href && (href.endsWith('.mp4') || href.includes('/creative/videos/'))) {
+                            return (
+                              <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+                                <video controls src={href} style={{ width: '100%', maxWidth: '520px', borderRadius: '10px' }} />
+                                <div><a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a></div>
+                              </div>
+                            )
+                          }
+                          return <a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a>
+                        }
+                      }}
+                    >
                       {message.content}
                     </ReactMarkdown>
                   ) : (
@@ -299,6 +359,20 @@ export default function ChatArea({
 
             {menuOpen && (
               <div className="attachment-menu">
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setCreativeOpen(true)
+                  }}
+                >
+                  <span className="menu-icon" style={{ color: '#ffb355', background: 'rgba(255,179,85,.15)' }}>✦</span>
+                  <span>
+                    <strong>Creative Studio</strong>
+                    <small>Blog, Formulas, Audio, Video</small>
+                  </span>
+                </button>
 
                 <button
                   type="button"
@@ -417,6 +491,189 @@ export default function ChatArea({
         hidden
         onChange={(event) => selectMedia(event, 'video')}
       />
+
+      {/* Creative Studio Modal - Native Theme */}
+      {creativeOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(5px)',
+            padding: '15px',
+          }}
+          onClick={() => setCreativeOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              background: '#191d29',
+              border: '1px solid rgba(151,126,255,.3)',
+              borderRadius: '16px',
+              padding: '24px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+              color: '#f4f5fb',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#a994ff' }}>
+                ✦ NEXORA Creative Studio
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCreativeOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#9ca2b6', fontSize: '20px', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateBlogSubmit}>
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#c5c9d6' }}>
+                  Blog Topic / Concepts:
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Deep Learning Transformers, Quantum Computing, Financial ROI..."
+                  value={blogTopic}
+                  onChange={(e) => setBlogTopic(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: '#10121a',
+                    color: '#fff',
+                    outline: 'none',
+                    fontSize: '13px',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#c5c9d6' }}>
+                    Tone:
+                  </label>
+                  <select
+                    value={blogTone}
+                    onChange={(e) => setBlogTone(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: '#10121a',
+                      color: '#fff',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <option value="Professional">Professional</option>
+                    <option value="Engaging">Engaging & Casual</option>
+                    <option value="Academic">Academic & Scientific</option>
+                    <option value="Executive">Executive & Strategic</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#c5c9d6' }}>
+                    Length:
+                  </label>
+                  <select
+                    value={blogLength}
+                    onChange={(e) => setBlogLength(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: '#10121a',
+                      color: '#fff',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <option value="Short">Short (~500 words)</option>
+                    <option value="Medium">Medium (~1000 words)</option>
+                    <option value="Long">Long (~1800 words)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', padding: '12px', background: '#12141d', borderRadius: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12px', color: '#d6d9e5', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeImages}
+                    onChange={(e) => setIncludeImages(e.target.checked)}
+                  />
+                  <span>Generate In-Between AI Images & Figures</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12px', color: '#d6d9e5', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeAudio}
+                    onChange={(e) => setIncludeAudio(e.target.checked)}
+                  />
+                  <span>Generate Audio Narration Podcast (Edge-TTS)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12px', color: '#d6d9e5', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeVideo}
+                    onChange={(e) => setIncludeVideo(e.target.checked)}
+                  />
+                  <span>Compile MP4 Video Slideshow (MoviePy)</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setCreativeOpen(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: 'transparent',
+                    color: '#c5c9d6',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!blogTopic.trim() || busy}
+                  style={{
+                    padding: '8px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--gradient)',
+                    color: '#fff',
+                    fontWeight: '600',
+                    cursor: !blogTopic.trim() || busy ? 'not-allowed' : 'pointer',
+                    opacity: !blogTopic.trim() || busy ? 0.5 : 1,
+                    fontSize: '13px',
+                  }}
+                >
+                  {busy ? 'Generating...' : 'Create Publication'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </main>
   )
