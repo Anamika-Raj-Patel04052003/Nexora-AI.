@@ -1,4 +1,12 @@
 
+"""
+NEXORA AI - Chat Chain
+
+Handles normal conversational responses with chat history.
+"""
+
+import logging
+
 from langchain_core.prompts import (
     ChatPromptTemplate,
     MessagesPlaceholder
@@ -7,6 +15,9 @@ from langchain_core.prompts import (
 from langchain_core.output_parsers import StrOutputParser
 
 from app.services.llm_service import llm
+
+
+logger = logging.getLogger(__name__)
 
 
 # ----------------------------------------
@@ -29,11 +40,14 @@ Your responsibilities:
 9. Never invent facts when information is unavailable.
 10. Be friendly, professional and helpful.
 
-You can use retrieved document context when it is
-provided by the RAG workflow.
+For normal chat requests, answer using your general
+knowledge while being transparent about uncertainty.
 
-If document context is provided, prioritize that
-context for document-specific questions.
+Document-specific questions should be handled by
+the document RAG workflow.
+
+If document context is provided explicitly, prioritize
+that context for document-specific questions.
 """
 
 
@@ -66,6 +80,19 @@ chat_chain = (
 
 
 # ----------------------------------------
+# VALIDATE INPUT
+# ----------------------------------------
+
+def validate_chat_input(message: str, history: list):
+
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("Message cannot be empty.")
+
+    if not isinstance(history, list):
+        raise ValueError("Chat history must be a list.")
+
+
+# ----------------------------------------
 # INVOKE CHAIN
 # ----------------------------------------
 
@@ -74,14 +101,31 @@ def generate_chat_response(
     history: list
 ) -> str:
 
-    response = chat_chain.invoke(
-        {
-            "input": message,
-            "history": history
-        }
-    )
+    validate_chat_input(message, history)
 
-    return response
+    try:
+
+        response = chat_chain.invoke(
+            {
+                "input": message.strip(),
+                "history": history
+            }
+        )
+
+        if not response or not response.strip():
+            raise RuntimeError(
+                "The chat model returned an empty response."
+            )
+
+        return response.strip()
+
+    except Exception as error:
+
+        logger.exception("Chat response generation failed.")
+
+        raise RuntimeError(
+            "Unable to generate chat response."
+        ) from error
 
 
 # ----------------------------------------
@@ -93,12 +137,24 @@ def stream_chat_response(
     history: list
 ):
 
-    for chunk in chat_chain.stream(
-        {
-            "input": message,
-            "history": history
-        }
-    ):
+    validate_chat_input(message, history)
 
-        if chunk:
-            yield chunk
+    try:
+
+        for chunk in chat_chain.stream(
+            {
+                "input": message.strip(),
+                "history": history
+            }
+        ):
+
+            if chunk:
+                yield chunk
+
+    except Exception as error:
+
+        logger.exception("Chat response streaming failed.")
+
+        raise RuntimeError(
+            "Unable to stream chat response."
+        ) from error

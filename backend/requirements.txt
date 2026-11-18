@@ -43,7 +43,18 @@ unstructured
 Pillow
 opencv-python-headless
 
+# Image Generation - Cloud
+huggingface_hub
+
+# Audio Generation - Text to Speech
+edge-tts
+
+# Video Creation
+moviepy
+
 # Utilities
 requests
 aiofiles
 tenacity
+
+ddgs

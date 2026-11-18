@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import database
-from app.api.routes import chat
+from app.api.routes import chat, creative
 
 
 # --------------------------------------------------
@@ -78,7 +78,7 @@ app.include_router(
     prefix="/api"
 )
 
-
+app.include_router(creative.router, prefix="/api")
 # --------------------------------------------------
 # HEALTH CHECK
 # --------------------------------------------------

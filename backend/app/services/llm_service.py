@@ -1,12 +1,21 @@
 
-from langchain_groq import ChatGroq
+"""
+NEXORA AI - LLM Service
 
-from langchain_core.messages import (
-    HumanMessage,
-    AIMessage
-)
+Centralized Groq LLM initialization and
+conversation response utilities.
+"""
+
+import logging
+from collections.abc import Iterable
+
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, AIMessage
 
 from app.config.settings import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 # ----------------------------------------
@@ -19,7 +28,7 @@ llm = ChatGroq(
     temperature=0.7,
     streaming=True,
     max_retries=2,
-    timeout=60
+    timeout=60,
 )
 
 
@@ -30,12 +39,24 @@ llm = ChatGroq(
 
 def convert_history(previous_messages):
 
+    if previous_messages is None:
+        return []
+
+    if not isinstance(previous_messages, Iterable):
+        raise ValueError("Conversation history must be iterable.")
+
     history = []
 
     for item in previous_messages:
 
-        role = item["role"]
-        content = item["content"]
+        if not isinstance(item, dict):
+            continue
+
+        role = item.get("role")
+        content = item.get("content")
+
+        if not isinstance(content, str) or not content.strip():
+            continue
 
         if role == "user":
 
@@ -58,31 +79,49 @@ def convert_history(previous_messages):
 
 def ask(message: str) -> str:
 
-    from app.chains.chat_chain import (
-        generate_chat_response
-    )
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("Message cannot be empty.")
 
-    return generate_chat_response(
-        message,
-        []
-    )
+    from app.chains.chat_chain import generate_chat_response
+
+    try:
+
+        return generate_chat_response(
+            message.strip(),
+            []
+        )
+
+    except Exception as error:
+
+        logger.exception("Normal chat response generation failed.")
+
+        raise RuntimeError(
+            "Unable to generate chat response."
+        ) from error
 
 
 # ----------------------------------------
 # STREAMING CHAT RESPONSE
 # ----------------------------------------
 
-def stream_reply(previous_messages, message):
+def stream_reply(previous_messages, message: str):
 
-    from app.chains.chat_chain import (
-        stream_chat_response
-    )
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("Message cannot be empty.")
 
-    history = convert_history(
-        previous_messages
-    )
+    from app.chains.chat_chain import stream_chat_response
 
-    yield from stream_chat_response(
-        message,
-        history
-    )
+    history = convert_history(previous_messages)
+
+    try:
+
+        yield from stream_chat_response(
+            message.strip(),
+            history
+        )
+
+    except Exception:
+
+        logger.exception("Streaming chat response failed.")
+
+        raise
