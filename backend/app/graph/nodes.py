@@ -6,14 +6,14 @@ Complete implementation of:
 2. Supervisor-backed Multimodal Intent Routing:
    - Document RAG (CRAG + Self-RAG + Web search)
    - In-chat Image Generation (FLUX / Local SD)
-   - In-chat Audio Generation (Edge-TTS)
-   - In-chat Video Slideshow Creation (MoviePy)
+   - In-chat Audio Generation (Knowledge Search -> Educational Content -> Edge-TTS)
+   - In-chat Video Slideshow Creation (Script -> 2 Scenes -> MoviePy)
    - In-chat Blog Generation (Formulas, Tables, Figures)
    - Normal Conversational Chat (Groq)
-3. Document retrieval from PGVector
-4. CRAG: Relevance grading (relevant vs irrelevant chunks)
-5. Query rewriting for ambiguous/failed retrievals
-6. Web search fallback via DuckDuckGo (ddgs)
+3. Document retrieval from PGVector / SQLite
+4. CRAG: Relevance grading
+5. Query rewriting
+6. Web search fallback via DuckDuckGo
 7. Answer generation with document-first prioritization
 8. Self-RAG: Grounding & relevance evaluation + bounded revision
 9. Response packaging & history management
@@ -69,15 +69,6 @@ def input_node(state: dict) -> dict:
 # ==========================================
 
 def intent_node(state: dict) -> dict:
-    """
-    Supervisor Agent analyzes the prompt and decides whether to route to:
-    - rag
-    - generate_image
-    - generate_audio
-    - generate_video
-    - generate_blog
-    - chat
-    """
     explicit_intent = state.get("intent", "auto")
     user_input = state.get("user_input", "")
     conversation_id = state.get("conversation_id")
@@ -88,7 +79,6 @@ def intent_node(state: dict) -> dict:
             "cleaned_prompt": user_input
         }
 
-    # Use Supervisor Agent for automatic multimodal routing
     routing_decision = classify_user_intent(
         user_input=user_input,
         conversation_id=conversation_id
@@ -145,17 +135,72 @@ def generate_image_node(state: dict) -> dict:
 
 def generate_audio_node(state: dict) -> dict:
     prompt = state.get("cleaned_prompt") or state.get("user_input", "")
-    logger.info("In-chat audio TTS triggered for: '%s'", prompt[:60])
+    conversation_id = state.get("conversation_id")
+    logger.info("In-chat audio generation triggered for: '%s'", prompt[:60])
 
     try:
-        result = asyncio.run(generate_audio(text=prompt))
+        # Step 1: Collect knowledge context from uploaded documents or web search
+        context_parts = []
+
+        if conversation_id:
+            try:
+                from app.database import has_uploaded_documents
+                if has_uploaded_documents(conversation_id):
+                    docs = retrieve_documents(question=prompt, conversation_id=conversation_id, search_k=3)
+                    if docs:
+                        doc_text = format_documents(docs)
+                        context_parts.append(f"UPLOADED DOCUMENT CONTEXT:\n{doc_text}")
+            except Exception as e:
+                logger.debug("Document retrieval for audio skipped: %s", e)
+
+        # If no document context found, search web for factual enrichment
+        if not context_parts:
+            try:
+                web_res = search_web(query=prompt, max_results=3)
+                if web_res:
+                    web_text = format_search_results(web_res)
+                    context_parts.append(f"WEB SEARCH INFORMATION:\n{web_text}")
+            except Exception as e:
+                logger.debug("Web search for audio skipped: %s", e)
+
+        combined_context = "\n\n".join(context_parts) if context_parts else "Use your extensive pre-trained knowledge."
+
+        # Step 2: Use LLM to generate substantive, informative content (NOT repeating the prompt)
+        generation_prompt = f"""
+You are NEXORA AI, an intelligent audio narrator and expert AI assistant.
+The user requested an audio response regarding:
+"{prompt}"
+
+BACKGROUND CONTEXT:
+{combined_context}
+
+INSTRUCTIONS:
+1. Provide a well-structured, informative, and engaging answer to the user's request (approx 3 to 5 sentences).
+2. NEVER simply repeat the user's prompt or question. Thoroughly explain the topic, core concepts, or direct answer.
+3. Write naturally and smoothly as a spoken script so it sounds like an articulate podcast or personal voice assistant.
+4. Keep the text clean: DO NOT use markdown asterisks (*), hashtags (#), formulas ($), bullet points, or emojis in the narration body.
+5. Speak in the same language as the prompt (Hindi, Hinglish, or English).
+"""
+
+        llm_response = llm.invoke([
+            SystemMessage(content="You are NEXORA AI, an articulate multimodal voice narrator."),
+            HumanMessage(content=generation_prompt)
+        ])
+        narration_text = llm_response.content.strip()
+
+        # Step 3: Convert the generated informative content into speech via Edge-TTS
+        tts_text = narration_text[:600]
+        result = asyncio.run(generate_audio(text=tts_text))
         filename = result["filename"]
         audio_url = f"/api/creative/audio/{filename}"
 
         markdown_response = (
-            f"Here is your generated audio speech:\n\n"
+            f"### 🎙️ Audio Explanation & Narration\n\n"
+            f"{narration_text}\n\n"
+            f"---\n\n"
+            f"🎧 **Listen to Audio Narration:**\n\n"
             f"🎙 [Listen to Audio Narration]({audio_url})\n\n"
-            f"> *Narrated Text:* {prompt[:250]}..."
+            f"> *Topic:* **{prompt}**"
         )
 
         return {
@@ -184,17 +229,45 @@ def generate_video_node(state: dict) -> dict:
     logger.info("In-chat video slideshow compilation triggered for: '%s'", prompt[:60])
 
     try:
-        # Step 1: Generate 2 key scenes for the video
-        img1 = generate_image(prompt=f"{prompt}, cinematic wide shot, 4k", mode="cloud")
-        img2 = generate_image(prompt=f"{prompt}, detailed close-up shot, 4k", mode="cloud")
+        # Step 1: Use LLM to write a concise educational script & 2 scene prompts
+        script_prompt = f"""
+The user requested a short 5-second video on: "{prompt}".
+Write:
+1. "narration": A concise 1-2 sentence spoken narration (approx 15 words) explaining key facts about this topic.
+2. "scene1": Visual prompt for scene 1 (cinematic wide shot, photorealistic 4k).
+3. "scene2": Visual prompt for scene 2 (detailed close-up or action shot, 4k).
+
+Respond strictly in valid JSON format:
+{{
+  "narration": "...",
+  "scene1": "...",
+  "scene2": "..."
+}}
+"""
+        narration_text = f"Exploring {prompt}. Experience intelligent multimodal creation with NEXORA AI."
+        scene1_prompt = f"{prompt}, cinematic wide shot, photorealistic 4k"
+        scene2_prompt = f"{prompt}, detailed close-up shot, 4k"
+
+        try:
+            res = llm.invoke([HumanMessage(content=script_prompt)])
+            cleaned_json = res.content.replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(cleaned_json)
+            narration_text = parsed.get("narration") or narration_text
+            scene1_prompt = parsed.get("scene1") or scene1_prompt
+            scene2_prompt = parsed.get("scene2") or scene2_prompt
+        except Exception as pe:
+            logger.debug("Video script JSON parsing fallback: %s", pe)
+
+        # Step 2: Generate 2 key scenes for the video
+        img1 = generate_image(prompt=scene1_prompt, mode="cloud")
+        img2 = generate_image(prompt=scene2_prompt, mode="cloud")
         image_filenames = [img1["filename"], img2["filename"]]
 
-        # Step 2: Generate narration audio
-        narration_text = f"Exploring {prompt}. Experience the future of intelligent multimodal creation with NEXORA AI."
+        # Step 3: Generate narration audio
         audio_res = asyncio.run(generate_audio(text=narration_text))
         audio_filename = audio_res["filename"]
 
-        # Step 3: Compile into MP4 slideshow
+        # Step 4: Compile into MP4 slideshow
         video_res = create_local_video(
             image_filenames=image_filenames,
             audio_filename=audio_filename
@@ -203,8 +276,9 @@ def generate_video_node(state: dict) -> dict:
         video_url = f"/api/creative/videos/{video_filename}"
 
         markdown_response = (
-            f"Here is the video compilation you requested:\n\n"
+            f"### 🎬 Generated Video Slideshow\n\n"
             f"🎬 [Watch MP4 Video Slideshow]({video_url})\n\n"
+            f"> 🗣️ **Narration:** *\"{narration_text}\"*\n\n"
             f"- **Topic:** {prompt}\n"
             f"- **Duration:** {video_res['duration']}s | **Resolution:** {video_res['resolution']}"
         )
@@ -235,7 +309,10 @@ def generate_blog_node(state: dict) -> dict:
     logger.info("In-chat blog publication triggered for: '%s'", prompt[:60])
 
     try:
+        # Generate structured blog with formulas & tables
         raw_blog = generate_blog(topic=prompt, length="Medium")
+
+        # Automatically embed in-between AI images
         media_res = add_images_to_blog(raw_blog, mode="cloud")
         final_blog = media_res["content"]
 
@@ -305,6 +382,9 @@ def retrieve_documents_node(state: dict) -> dict:
             "retrieval_status": "error",
             "needs_web_search": True
         }
+
+# Alias for compatibility
+retrieve_node = retrieve_documents_node
 
 
 # ==========================================
